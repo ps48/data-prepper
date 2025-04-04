@@ -1,0 +1,33 @@
+{
+    "resourceMetrics": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "example-service"
+              }
+            }
+          ]
+        },
+        "scopeMetrics": [
+          {
+            "metrics": [
+              {
+                "name": "example-metric",
+                "sum": {
+                  "dataPoints": [
+                    {
+                      "timeUnixNano": "1672531200000000000",
+                      "value": 42
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }

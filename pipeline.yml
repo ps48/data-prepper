@@ -1,0 +1,28 @@
+pipeline:
+  sources:
+    - otel_telemetry_source:
+        # Configuration for OpenTelemetry source
+        port: 21890
+        ssl: false
+
+  processors:
+    - telemetry_processor: {}
+
+  sinks:
+    - opensearch:
+        hosts: ["https://localhost:9200"]
+        index: "otel-logs"
+        document_type: "otel-log"
+        route: "'LOG' == event.type"
+
+    - opensearch:
+        hosts: ["https://localhost:9200"]
+        index: "otel-traces"
+        document_type: "otel-trace"
+        route: "'TRACE' == event.type"
+
+    - opensearch:
+        hosts: ["https://localhost:9200"]
+        index: "otel-metrics"
+        document_type: "otel-metric"
+        route: "'METRIC' == event.type"
