@@ -64,7 +64,8 @@ public class OTelTraceSource implements Source<Record<Object>> {
     private static final String PIPELINE_NAME_PLACEHOLDER = "${pipelineName}";
 
     // Default RetryInfo with minimum 100ms and maximum 2s
-    private static final RetryInfoConfig DEFAULT_RETRY_INFO = new RetryInfoConfig(Duration.ofMillis(100), Duration.ofMillis(2000));
+    private static final RetryInfoConfig DEFAULT_RETRY_INFO = new RetryInfoConfig(Duration.ofMillis(100),
+            Duration.ofMillis(2000));
 
     private final OTelTraceSourceConfig oTelTraceSourceConfig;
     private final PluginMetrics pluginMetrics;
@@ -75,14 +76,18 @@ public class OTelTraceSource implements Source<Record<Object>> {
     private final ByteDecoder byteDecoder;
 
     @DataPrepperPluginConstructor
-    public OTelTraceSource(final OTelTraceSourceConfig oTelTraceSourceConfig, final PluginMetrics pluginMetrics, final PluginFactory pluginFactory,
-                           final PipelineDescription pipelineDescription) {
-        this(oTelTraceSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelTraceSourceConfig), pipelineDescription);
+    public OTelTraceSource(final OTelTraceSourceConfig oTelTraceSourceConfig, final PluginMetrics pluginMetrics,
+            final PluginFactory pluginFactory,
+            final PipelineDescription pipelineDescription) {
+        this(oTelTraceSourceConfig, pluginMetrics, pluginFactory, new CertificateProviderFactory(oTelTraceSourceConfig),
+                pipelineDescription);
     }
 
     // accessible only in the same package for unit test
-    OTelTraceSource(final OTelTraceSourceConfig oTelTraceSourceConfig, final PluginMetrics pluginMetrics, final PluginFactory pluginFactory,
-                    final CertificateProviderFactory certificateProviderFactory, final PipelineDescription pipelineDescription) {
+    OTelTraceSource(final OTelTraceSourceConfig oTelTraceSourceConfig, final PluginMetrics pluginMetrics,
+            final PluginFactory pluginFactory,
+            final CertificateProviderFactory certificateProviderFactory,
+            final PipelineDescription pipelineDescription) {
         oTelTraceSourceConfig.validateAndInitializeCertAndKeyFileInS3();
         this.oTelTraceSourceConfig = oTelTraceSourceConfig;
         this.pluginMetrics = pluginMetrics;
@@ -106,11 +111,12 @@ public class OTelTraceSource implements Source<Record<Object>> {
         if (server == null) {
 
             final OTelTraceGrpcService oTelTraceGrpcService = new OTelTraceGrpcService(
-                    (int)(oTelTraceSourceConfig.getRequestTimeoutInMillis() * 0.8),
-                    oTelTraceSourceConfig.getOutputFormat() == OTelOutputFormat.OPENSEARCH ? new OTelProtoOpensearchCodec.OTelProtoDecoder() : new OTelProtoStandardCodec.OTelProtoDecoder(),
+                    (int) (oTelTraceSourceConfig.getRequestTimeoutInMillis() * 0.8),
+                    oTelTraceSourceConfig.getOutputFormat() == OTelOutputFormat.OPENSEARCH
+                            ? new OTelProtoOpensearchCodec.OTelProtoDecoder()
+                            : new OTelProtoStandardCodec.OTelProtoDecoder(),
                     buffer,
-                    pluginMetrics
-            );
+                    pluginMetrics);
 
             final List<ServerInterceptor> serverInterceptors = getAuthenticationInterceptor();
 
@@ -120,10 +126,12 @@ public class OTelTraceSource implements Source<Record<Object>> {
                     .useBlockingTaskExecutor(true)
                     .exceptionHandler(createGrpExceptionHandler());
 
-            final MethodDescriptor<ExportTraceServiceRequest, ExportTraceServiceResponse> methodDescriptor = TraceServiceGrpc.getExportMethod();
+            final MethodDescriptor<ExportTraceServiceRequest, ExportTraceServiceResponse> methodDescriptor = TraceServiceGrpc
+                    .getExportMethod();
             final String oTelTraceSourcePath = oTelTraceSourceConfig.getPath();
             if (oTelTraceSourcePath != null) {
-                final String transformedOTelTraceSourcePath = oTelTraceSourcePath.replace(PIPELINE_NAME_PLACEHOLDER, pipelineName);
+                final String transformedOTelTraceSourcePath = oTelTraceSourcePath.replace(PIPELINE_NAME_PLACEHOLDER,
+                        pipelineName);
                 grpcServiceBuilder.addService(transformedOTelTraceSourcePath,
                         ServerInterceptors.intercept(oTelTraceGrpcService, serverInterceptors), methodDescriptor);
             } else {
@@ -155,19 +163,19 @@ public class OTelTraceSource implements Source<Record<Object>> {
             }
 
             if (oTelTraceSourceConfig.getAuthentication() != null) {
-                final Optional<Function<? super HttpService, ? extends HttpService>> optionalHttpAuthenticationService =
-                        authenticationProvider.getHttpAuthenticationService();
+                final Optional<Function<? super HttpService, ? extends HttpService>> optionalHttpAuthenticationService = authenticationProvider
+                        .getHttpAuthenticationService();
 
                 if (oTelTraceSourceConfig.isUnauthenticatedHealthCheck()) {
-                    optionalHttpAuthenticationService.ifPresent(httpAuthenticationService ->
-                            sb.decorator(REGEX_HEALTH, httpAuthenticationService));
+                    optionalHttpAuthenticationService.ifPresent(
+                            httpAuthenticationService -> sb.decorator(REGEX_HEALTH, httpAuthenticationService));
                 } else {
                     optionalHttpAuthenticationService.ifPresent(sb::decorator);
                 }
             }
 
             sb.requestTimeoutMillis(oTelTraceSourceConfig.getRequestTimeoutInMillis());
-            if(oTelTraceSourceConfig.getMaxRequestLength() != null) {
+            if (oTelTraceSourceConfig.getMaxRequestLength() != null) {
                 sb.maxRequestLength(oTelTraceSourceConfig.getMaxRequestLength().getBytes());
             }
 
@@ -177,13 +185,12 @@ public class OTelTraceSource implements Source<Record<Object>> {
                 final CertificateProvider certificateProvider = certificateProviderFactory.getCertificateProvider();
                 final Certificate certificate = certificateProvider.getCertificate();
                 sb.https(oTelTraceSourceConfig.getPort()).tls(
-                    new ByteArrayInputStream(certificate.getCertificate().getBytes(StandardCharsets.UTF_8)),
-                    new ByteArrayInputStream(certificate.getPrivateKey().getBytes(StandardCharsets.UTF_8)
-                    )
-                );
+                        new ByteArrayInputStream(certificate.getCertificate().getBytes(StandardCharsets.UTF_8)),
+                        new ByteArrayInputStream(certificate.getPrivateKey().getBytes(StandardCharsets.UTF_8)));
             } else {
                 LOG.warn("Creating otel_trace_source without SSL/TLS. This is not secure.");
-                LOG.warn("In order to set up TLS for the otel_trace_source, go here: https://github.com/opensearch-project/data-prepper/tree/main/data-prepper-plugins/otel-trace-source#ssl");
+                LOG.warn(
+                        "In order to set up TLS for the otel_trace_source, go here: https://github.com/opensearch-project/data-prepper/tree/main/data-prepper-plugins/otel-trace-source#ssl");
                 sb.http(oTelTraceSourceConfig.getPort());
             }
 
@@ -251,16 +258,20 @@ public class OTelTraceSource implements Source<Record<Object>> {
     private GrpcAuthenticationProvider createAuthenticationProvider(final PluginFactory pluginFactory) {
         final PluginModel authenticationConfiguration = oTelTraceSourceConfig.getAuthentication();
 
-        if (authenticationConfiguration == null || authenticationConfiguration.getPluginName().equals(GrpcAuthenticationProvider.UNAUTHENTICATED_PLUGIN_NAME)) {
+        if (authenticationConfiguration == null || authenticationConfiguration.getPluginName()
+                .equals(GrpcAuthenticationProvider.UNAUTHENTICATED_PLUGIN_NAME)) {
             LOG.warn("Creating otel-trace-source without authentication. This is not secure.");
-            LOG.warn("In order to set up Http Basic authentication for the otel-trace-source, go here: https://github.com/opensearch-project/data-prepper/tree/main/data-prepper-plugins/otel-trace-source#authentication-configurations");
+            LOG.warn(
+                    "In order to set up Http Basic authentication for the otel-trace-source, go here: https://github.com/opensearch-project/data-prepper/tree/main/data-prepper-plugins/otel-trace-source#authentication-configurations");
         }
 
         final PluginSetting authenticationPluginSetting;
         if (authenticationConfiguration != null) {
-            authenticationPluginSetting = new PluginSetting(authenticationConfiguration.getPluginName(), authenticationConfiguration.getPluginSettings());
+            authenticationPluginSetting = new PluginSetting(authenticationConfiguration.getPluginName(),
+                    authenticationConfiguration.getPluginSettings());
         } else {
-            authenticationPluginSetting = new PluginSetting(GrpcAuthenticationProvider.UNAUTHENTICATED_PLUGIN_NAME, Collections.emptyMap());
+            authenticationPluginSetting = new PluginSetting(GrpcAuthenticationProvider.UNAUTHENTICATED_PLUGIN_NAME,
+                    Collections.emptyMap());
         }
         authenticationPluginSetting.setPipelineName(pipelineName);
         return pluginFactory.loadPlugin(GrpcAuthenticationProvider.class, authenticationPluginSetting);
