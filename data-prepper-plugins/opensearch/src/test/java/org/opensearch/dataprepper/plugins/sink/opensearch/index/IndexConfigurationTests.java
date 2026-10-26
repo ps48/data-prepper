@@ -223,7 +223,7 @@ public class IndexConfigurationTests {
     }
 
     @ParameterizedTest
-    @EnumSource(value = IndexType.class, names = {"TRACE_ANALYTICS_RAW_PLAIN", "LOG_ANALYTICS_PLAIN", "OTEL_APM_SERVICE_MAP"})
+    @EnumSource(value = IndexType.class, names = {"TRACE_ANALYTICS_RAW_PLAIN", "LOG_ANALYTICS_PLAIN", "OTEL_APM_SERVICE_MAP", "GENAI_EVALUATION", "GENAI_EVALUATION_PLAIN"})
     public void testBuiltInIndexTypeWithComponentTemplates(final IndexType indexType) {
         final IndexConfiguration indexConfiguration = new IndexConfiguration.Builder()
                 .withIndexType(indexType.getValue())
@@ -311,6 +311,79 @@ public class IndexConfigurationTests {
         assertThat(indexTemplate.get("version"), equalTo(1));
         final Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
         assertDependencyAttributesMapping((Map<String, Object>) template.get("mappings"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = IndexType.class, names = {"GENAI_EVALUATION", "GENAI_EVALUATION_PLAIN"})
+    public void testGenAIEvaluation_usesDefaultAliasAndTypedEvaluationMappings(final IndexType indexType) {
+        final IndexConfiguration indexConfiguration = new IndexConfiguration.Builder()
+                .withIndexType(indexType.getValue())
+                .withIndexAlias("ignored-index-alias")
+                .build();
+        assertThat(indexConfiguration.getIndexType(), equalTo(indexType));
+        assertThat(indexConfiguration.getIndexAlias(), equalTo("otel-v1-genai-evaluation"));
+        assertThat(indexConfiguration.getTemplateType(), equalTo(TemplateType.V1));
+        final Map<String, Object> indexTemplate = indexConfiguration.getIndexTemplate();
+        assertThat(indexTemplate.get("version"), equalTo(1));
+        assertThat(indexTemplate, not(hasKey("template")));
+        assertGenAIEvaluationMappings((Map<String, Object>) indexTemplate.get("mappings"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = IndexType.class, names = {"GENAI_EVALUATION", "GENAI_EVALUATION_PLAIN"})
+    public void testGenAIEvaluationWithIndexTemplates_usesTypedEvaluationMappings(final IndexType indexType) {
+        final IndexConfiguration indexConfiguration = new IndexConfiguration.Builder()
+                .withIndexType(indexType.getValue())
+                .withTemplateType(TemplateType.INDEX_TEMPLATE.getTypeName())
+                .build();
+        assertThat(indexConfiguration.getIndexAlias(), equalTo("otel-v1-genai-evaluation"));
+        assertThat(indexConfiguration.getTemplateType(), equalTo(TemplateType.INDEX_TEMPLATE));
+        final Map<String, Object> indexTemplate = indexConfiguration.getIndexTemplate();
+        assertThat(indexTemplate.get("version"), equalTo(1));
+        assertThat(indexTemplate, not(hasKey("mappings")));
+        final Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
+        assertGenAIEvaluationMappings((Map<String, Object>) template.get("mappings"));
+    }
+
+    private void assertGenAIEvaluationMappings(final Map<String, Object> mappings) {
+        assertThat(mappings.get("date_detection"), equalTo(false));
+        final Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
+        assertThat(properties.get("@timestamp"), equalTo(Map.of("type", "date_nanos")));
+        assertThat(properties.get("time"), equalTo(Map.of("type", "date_nanos")));
+        assertThat(((Map<String, Object>) properties.get("eventName")).get("type"), equalTo("keyword"));
+        assertThat(((Map<String, Object>) properties.get("traceId")).get("type"), equalTo("keyword"));
+        assertThat(((Map<String, Object>) properties.get("spanId")).get("type"), equalTo("keyword"));
+
+        final Map<String, Object> attributes = getProperties(properties, "attributes");
+        final Map<String, Object> evaluation = getProperties(getProperties(attributes, "gen_ai"), "evaluation");
+        assertThat(evaluation.get("name"), equalTo(Map.of("type", "keyword")));
+        final Map<String, Object> score = getProperties(evaluation, "score");
+        assertThat(score.get("value"), equalTo(Map.of("type", "double")));
+        assertThat(score.get("label"), equalTo(Map.of("type", "keyword")));
+        final Map<String, Object> explanation = (Map<String, Object>) evaluation.get("explanation");
+        assertThat(explanation.get("type"), equalTo("text"));
+        assertThat(explanation.get("fields"), equalTo(Map.of("keyword", Map.of("type", "keyword", "ignore_above", 256))));
+
+        final Map<String, Object> opensearchEvaluation = getProperties(getProperties(attributes, "opensearch"), "evaluation");
+        assertThat(opensearchEvaluation.get("level"), equalTo(Map.of("type", "keyword")));
+        assertThat(getProperties(opensearchEvaluation, "score").get("min"), equalTo(Map.of("type", "double")));
+        assertThat(getProperties(opensearchEvaluation, "score").get("max"), equalTo(Map.of("type", "double")));
+        assertThat(getProperties(getProperties(getProperties(attributes, "test"), "case"), "result").get("status"),
+                equalTo(Map.of("type", "keyword")));
+        assertThat(getProperties(getProperties(attributes, "derived"), "session").get("id"), equalTo(Map.of("type", "keyword")));
+
+        final List<Map<String, Object>> dynamicTemplates = (List<Map<String, Object>>) mappings.get("dynamic_templates");
+        final Map<String, Object> longAttributes = dynamicTemplates.stream()
+                .filter(dynamicTemplate -> dynamicTemplate.containsKey("long_attributes"))
+                .map(dynamicTemplate -> (Map<String, Object>) dynamicTemplate.get("long_attributes"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(longAttributes.get("path_match"), equalTo("attributes.*"));
+        assertThat(longAttributes.get("mapping"), equalTo(Map.of("type", "double")));
+    }
+
+    private Map<String, Object> getProperties(final Map<String, Object> properties, final String field) {
+        return (Map<String, Object>) ((Map<String, Object>) properties.get(field)).get("properties");
     }
 
     private void assertDependencyAttributesMapping(final Map<String, Object> mappings) {

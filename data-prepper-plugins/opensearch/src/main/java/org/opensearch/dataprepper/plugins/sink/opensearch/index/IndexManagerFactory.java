@@ -72,6 +72,14 @@ public class IndexManagerFactory {
                 indexManager = new LogAnalyticsIndexManager(
                         restHighLevelClient, openSearchClient, openSearchSinkConfiguration, clusterSettingsParser, templateStrategy, indexAlias);
                 break;
+            case GENAI_EVALUATION:
+                indexManager = new GenAIEvaluationIndexManager(
+                        restHighLevelClient, openSearchClient, openSearchSinkConfiguration, clusterSettingsParser, templateStrategy, indexAlias);
+                break;
+            case GENAI_EVALUATION_PLAIN:
+                indexManager = new GenAIEvaluationPlainIndexManager(
+                        restHighLevelClient, openSearchClient, openSearchSinkConfiguration, clusterSettingsParser, templateStrategy, indexAlias);
+                break;
             case METRIC_ANALYTICS:
             case METRIC_ANALYTICS_PLAIN:
                 indexManager = new MetricAnalyticsIndexManager(
@@ -210,6 +218,37 @@ public class IndexManagerFactory {
                     IndexConstants.LOGS_ISM_POLICY,
                     IndexConstants.LOGS_ISM_FILE_WITH_ISM_TEMPLATE,
                     IndexConstants.LOGS_ISM_FILE_NO_ISM_TEMPLATE);
+        }
+    }
+
+    private static class GenAIEvaluationIndexManager extends AbstractIndexManager {
+
+        public GenAIEvaluationIndexManager(final RestHighLevelClient restHighLevelClient,
+                                           final OpenSearchClient openSearchClient,
+                                           final OpenSearchSinkConfiguration openSearchSinkConfiguration,
+                                           final ClusterSettingsParser clusterSettingsParser,
+                                           final TemplateStrategy templateStrategy,
+                                           final String indexAlias) {
+            super(restHighLevelClient, openSearchClient, openSearchSinkConfiguration, clusterSettingsParser, templateStrategy, indexAlias);
+            this.ismPolicyManagementStrategy = new IsmPolicyManagement(
+                    openSearchClient,
+                    restHighLevelClient,
+                    IndexConstants.GENAI_EVALUATION_ISM_POLICY,
+                    IndexConstants.GENAI_EVALUATION_ISM_FILE_WITH_ISM_TEMPLATE,
+                    IndexConstants.GENAI_EVALUATION_ISM_FILE_NO_ISM_TEMPLATE);
+        }
+    }
+
+    private static class GenAIEvaluationPlainIndexManager extends AbstractIndexManager {
+
+        public GenAIEvaluationPlainIndexManager(final RestHighLevelClient restHighLevelClient,
+                                                final OpenSearchClient openSearchClient,
+                                                final OpenSearchSinkConfiguration openSearchSinkConfiguration,
+                                                final ClusterSettingsParser clusterSettingsParser,
+                                                final TemplateStrategy templateStrategy,
+                                                final String indexAlias) {
+            super(restHighLevelClient, openSearchClient, openSearchSinkConfiguration, clusterSettingsParser, templateStrategy, indexAlias);
+            this.ismPolicyManagementStrategy = new NoIsmPolicyManagement(openSearchClient, restHighLevelClient);
         }
     }
 
