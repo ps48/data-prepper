@@ -15,7 +15,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Min;
 
 import java.time.Duration;
 
@@ -26,7 +25,6 @@ public class OtelTraceRawProcessorConfig {
     static final long DEFAULT_TG_FLUSH_INTERVAL_SEC = 180L;
     static final Duration DEFAULT_TRACE_ID_TTL = Duration.ofSeconds(15L);
     static final long MAX_TRACE_ID_CACHE_SIZE = 1_000_000L;
-    static final long DEFAULT_GENAI_COVERAGE_CACHE_MAX_SIZE = 500_000L;
 
     @JsonProperty(value = "trace_flush_interval", defaultValue = "180")
     @JsonPropertyDescription("Represents the time interval in seconds to flush all the descendant spans without any " +
@@ -50,11 +48,14 @@ public class OtelTraceRawProcessorConfig {
             "onto trace roots. Traces without GenAI data are left unchanged either way. Default is <code>false</code>.")
     private boolean disableGenAiEnrichment = false;
 
-    @JsonProperty(value = "genai_coverage_cache_max_size", defaultValue = "500000")
-    @JsonPropertyDescription("Represents the maximum number of span ids to keep in the cache of GenAI spans already seen " +
-            "per trace, used so that GenAI spans arriving after their ancestors are not marked as a trace's AI root. " +
-            "Default is <code>500000</code>.")
-    @Min(1)
+    /**
+     * @deprecated GenAI agent root marking no longer keeps a cache. The setting is accepted so
+     * pipelines that set it still start, its value is ignored, and it will be removed in 3.0.
+     */
+    @Deprecated
+    @JsonProperty(value = "genai_coverage_cache_max_size")
+    @JsonPropertyDescription("Deprecated. Has no effect and will be removed in 3.0. GenAI agent root marking no longer " +
+            "keeps a cache of span ids, so the value is ignored and a warning is logged at startup when it is set.")
     private Long genAiCoverageCacheMaxSize;
 
     @JsonProperty(value = "genai_root_propagation", defaultValue = "ai_root")
@@ -63,6 +64,8 @@ public class OtelTraceRawProcessorConfig {
             "<code>ai_root</code> copies them only onto a root that is its trace's AI root (a GenAI span, or a span marked " +
             "<code>derived.gen_ai.is_root: true</code> at the source). <code>all_roots</code> also copies them onto " +
             "non-GenAI roots, such as the HTTP span an agent runs behind. <code>none</code> copies nothing. " +
+            "Values come only from spans in the same batch as the root, so this is best effort when spans of a trace " +
+            "arrive in different batches; consumers should sum tokens from model-call spans. " +
             "Default is <code>ai_root</code>.")
     private GenAiRootPropagation genAiRootPropagation;
 
@@ -82,16 +85,22 @@ public class OtelTraceRawProcessorConfig {
         return disableGenAiEnrichment;
     }
 
-    public long getGenAiCoverageCacheMaxSize() {
-        return genAiCoverageCacheMaxSize != null ? genAiCoverageCacheMaxSize : DEFAULT_GENAI_COVERAGE_CACHE_MAX_SIZE;
+    /**
+     * Whether the deprecated {@code genai_coverage_cache_max_size} is set. Its value is ignored;
+     * the processor only logs a deprecation warning.
+     *
+     * @return {@code true} when the setting is present in the pipeline configuration
+     */
+    public boolean isGenAiCoverageCacheMaxSizeSet() {
+        return genAiCoverageCacheMaxSize != null;
     }
 
     public GenAiRootPropagation getGenAiRootPropagation() {
         return genAiRootPropagation != null ? genAiRootPropagation : GenAiRootPropagation.AI_ROOT;
     }
 
-    @AssertTrue(message = "genai_root_propagation and genai_coverage_cache_max_size cannot be set when disable_genai_enrichment is true")
+    @AssertTrue(message = "genai_root_propagation cannot be set when disable_genai_enrichment is true")
     boolean isGenAiSettingsValid() {
-        return !disableGenAiEnrichment || (genAiRootPropagation == null && genAiCoverageCacheMaxSize == null);
+        return !disableGenAiEnrichment || genAiRootPropagation == null;
     }
 }

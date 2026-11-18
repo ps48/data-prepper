@@ -28,7 +28,6 @@ import org.opensearch.dataprepper.plugins.otel.common.OTelSpanDerivationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -50,8 +49,6 @@ public class OTelTraceRawProcessor extends AbstractProcessor<Record<Span>, Recor
     private static final Logger LOG = LoggerFactory.getLogger(OTelTraceRawProcessor.class);
     public static final String TRACE_GROUP_CACHE_COUNT_METRIC_NAME = "traceGroupCacheCount";
     public static final String SPAN_SET_COUNT_METRIC_NAME = "spanSetCount";
-    public static final String GENAI_COVERAGE_COUNT_METRIC_NAME = "genAiCoverageCount";
-    public static final String GENAI_COVERAGE_SPAN_ID_COUNT_METRIC_NAME = "genAiCoverageSpanIdCount";
 
     private final long traceFlushInterval;
 
@@ -59,8 +56,6 @@ public class OTelTraceRawProcessor extends AbstractProcessor<Record<Span>, Recor
 
     private final Cache<String, TraceGroup> traceIdTraceGroupCache;
 
-    /** Span ids covered by GenAI spans, per trace, for spans that arrive after their ancestors. */
-    private final GenAiCoverage genAiCoverage;
     private final GenAiRootPropagation genAiRootPropagation;
     private final boolean genAiEnrichmentEnabled;
 
@@ -86,19 +81,22 @@ public class OTelTraceRawProcessor extends AbstractProcessor<Record<Span>, Recor
         genAiEnrichmentEnabled = !otelTraceRawProcessorConfig.isGenAiEnrichmentDisabled();
         genAiRootPropagation = Objects.requireNonNullElse(
                 otelTraceRawProcessorConfig.getGenAiRootPropagation(), GenAiRootPropagation.AI_ROOT);
-        // Outlives the orphan flush: spans that arrive late are held up to two flush intervals.
-        genAiCoverage = genAiEnrichmentEnabled
-                ? GenAiCoverage.create(otelTraceRawProcessorConfig.getGenAiCoverageCacheMaxSize(),
-                        Duration.ofMillis(2 * traceFlushInterval).plus(otelTraceRawProcessorConfig.getTraceGroupCacheTimeToLive()))
-                : GenAiCoverage.NONE;
+        warnOnDeprecatedSettings(otelTraceRawProcessorConfig, LOG);
 
         pluginMetrics.gauge(TRACE_GROUP_CACHE_COUNT_METRIC_NAME, traceIdTraceGroupCache, cache -> (double) cache.estimatedSize());
         pluginMetrics.gauge(SPAN_SET_COUNT_METRIC_NAME, traceIdSpanSetMap, cache -> (double) cache.size());
-        pluginMetrics.gauge(GENAI_COVERAGE_COUNT_METRIC_NAME, genAiCoverage, coverage -> (double) coverage.estimatedSize());
-        pluginMetrics.gauge(GENAI_COVERAGE_SPAN_ID_COUNT_METRIC_NAME, genAiCoverage, coverage -> (double) coverage.spanIdCount());
 
         LOG.info("Configured Trace Raw Processor with a trace flush interval of {} ms, GenAI enrichment {}.",
                 traceFlushInterval, genAiEnrichmentEnabled ? "enabled with root propagation " + genAiRootPropagation : "disabled");
+    }
+
+    /** Logs one warning per deprecated setting that is set. */
+    static void warnOnDeprecatedSettings(final OtelTraceRawProcessorConfig config, final Logger logger) {
+        if (config.isGenAiCoverageCacheMaxSizeSet()) {
+            logger.warn("The otel_traces setting genai_coverage_cache_max_size is deprecated and has no effect: " +
+                    "GenAI agent root marking no longer keeps a cache. Remove it from the pipeline configuration; " +
+                    "it will be removed in 3.0.");
+        }
     }
 
     /**
@@ -122,7 +120,7 @@ public class OTelTraceRawProcessor extends AbstractProcessor<Record<Span>, Recor
 
         // Enrich GenAI agent traces (normalize attributes, strip conflicting sub-keys, mark agent roots, enrich roots)
         if (genAiEnrichmentEnabled) {
-            GenAiEnrichmentHelper.enrichBatch(processedSpans, genAiCoverage, genAiRootPropagation);
+            GenAiEnrichmentHelper.enrichBatch(processedSpans, genAiRootPropagation);
         }
 
         // Derive server span attributes (fault, error, operation, environment)

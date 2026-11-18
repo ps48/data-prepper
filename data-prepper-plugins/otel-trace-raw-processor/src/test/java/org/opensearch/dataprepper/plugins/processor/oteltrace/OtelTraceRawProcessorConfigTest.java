@@ -10,6 +10,7 @@
 
 package org.opensearch.dataprepper.plugins.processor.oteltrace;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.ValueInstantiationException;
 import jakarta.validation.constraints.AssertTrue;
@@ -28,6 +29,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OtelTraceRawProcessorConfigTest {
@@ -46,7 +48,7 @@ class OtelTraceRawProcessorConfigTest {
         assertThat(config.getTraceGroupCacheTimeToLive(), equalTo(OtelTraceRawProcessorConfig.DEFAULT_TRACE_ID_TTL));
         assertThat(config.getTraceGroupCacheMaxSize(), equalTo(OtelTraceRawProcessorConfig.MAX_TRACE_ID_CACHE_SIZE));
         assertThat(config.isGenAiEnrichmentDisabled(), is(false));
-        assertThat(config.getGenAiCoverageCacheMaxSize(), equalTo(500_000L));
+        assertThat(config.isGenAiCoverageCacheMaxSizeSet(), is(false));
         assertThat(config.getGenAiRootPropagation(), equalTo(GenAiRootPropagation.AI_ROOT));
         assertThat(config.isGenAiSettingsValid(), is(true));
     }
@@ -56,7 +58,7 @@ class OtelTraceRawProcessorConfigTest {
         final OtelTraceRawProcessorConfig config = deserialize(Map.of());
 
         assertThat(config.isGenAiEnrichmentDisabled(), is(false));
-        assertThat(config.getGenAiCoverageCacheMaxSize(), equalTo(OtelTraceRawProcessorConfig.DEFAULT_GENAI_COVERAGE_CACHE_MAX_SIZE));
+        assertThat(config.isGenAiCoverageCacheMaxSizeSet(), is(false));
         assertThat(config.getGenAiRootPropagation(), equalTo(GenAiRootPropagation.AI_ROOT));
     }
 
@@ -69,16 +71,21 @@ class OtelTraceRawProcessorConfigTest {
     }
 
     @ParameterizedTest
-    @CsvSource({
-            "genai_root_propagation, ai_root",
-            "genai_root_propagation, none",
-            "genai_coverage_cache_max_size, 1000"
-    })
-    void isGenAiSettingsValid_whenAGenAiSettingIsSetWithEnrichmentDisabled_isFalse(final String setting, final String value) {
-        final Object parsed = setting.equals("genai_coverage_cache_max_size") ? (Object) Long.valueOf(value) : value;
-        final OtelTraceRawProcessorConfig config = deserialize(Map.of("disable_genai_enrichment", true, setting, parsed));
+    @ValueSource(strings = {"ai_root", "none"})
+    void isGenAiSettingsValid_whenRootPropagationIsSetWithEnrichmentDisabled_isFalse(final String value) {
+        final OtelTraceRawProcessorConfig config = deserialize(Map.of(
+                "disable_genai_enrichment", true, "genai_root_propagation", value));
 
         assertThat(config.isGenAiSettingsValid(), is(false));
+    }
+
+    @Test
+    void isGenAiSettingsValid_whenTheDeprecatedCoverageCacheSizeIsSetWithEnrichmentDisabled_isTrue() {
+        // The setting has no effect, so it no longer conflicts with disable_genai_enrichment.
+        final OtelTraceRawProcessorConfig config = deserialize(Map.of(
+                "disable_genai_enrichment", true, "genai_coverage_cache_max_size", 1000));
+
+        assertThat(config.isGenAiSettingsValid(), is(true));
     }
 
     @Test
@@ -127,20 +134,22 @@ class OtelTraceRawProcessorConfigTest {
         assertThat(exception.getMessage(), containsString("ai_root, all_roots, none"));
     }
 
-    @Test
-    void deserialize_genAiCoverageCacheMaxSize_readsTheValue() {
-        final OtelTraceRawProcessorConfig config = deserialize(Map.of("genai_coverage_cache_max_size", 1234));
+    @ParameterizedTest
+    @ValueSource(longs = {1234L, 0L, -1L})
+    void deserialize_deprecatedGenAiCoverageCacheMaxSize_isAcceptedWithAnyValue(final long value) {
+        final OtelTraceRawProcessorConfig config = deserialize(Map.of("genai_coverage_cache_max_size", value));
 
-        assertThat(config.getGenAiCoverageCacheMaxSize(), equalTo(1234L));
+        assertThat(config.isGenAiCoverageCacheMaxSizeSet(), is(true));
+        assertThat(config.isGenAiSettingsValid(), is(true));
     }
 
     @Test
-    void genAiCoverageCacheMaxSize_mustBeAtLeastOne() throws NoSuchFieldException {
+    void genAiCoverageCacheMaxSize_isDeprecatedWithNoRangeCheck() throws NoSuchFieldException {
         final Field field = OtelTraceRawProcessorConfig.class.getDeclaredField("genAiCoverageCacheMaxSize");
 
-        final Min min = field.getAnnotation(Min.class);
-
-        assertThat(min, notNullValue());
-        assertThat(min.value(), equalTo(1L));
+        assertThat(field.getAnnotation(Deprecated.class), notNullValue());
+        assertThat(field.getAnnotation(Min.class), nullValue());
+        assertThat(field.getAnnotation(JsonPropertyDescription.class).value(), containsString("no effect"));
+        assertThat(field.getAnnotation(JsonPropertyDescription.class).value(), containsString("3.0"));
     }
 }
